@@ -40,6 +40,9 @@
    *              Incremented version number to 10, coz I am very special sometimes and
    *              forgot when I fixed the previous set of bugs ;-)
    * 11/04/2007 - Graph drawing code rework. Now graph is scaled! (Needs more ram, though);
+   * 22/10/2008 - Updated padsl-usage API url.
+   *              Added support for Cisco 79XX IP phone output. The patch for this was provided
+   *              by `michael' on Whirlpool. http://forums.whirlpool.net.au/forum-user.cfm?id=53603
    */
 
   // Your username and password, change these.
@@ -56,7 +59,7 @@
   // Don't modify anything else!
   define("DISPLAY", INTERNODE_USAGE);
 
-  define("INTERNODE_HOST", "accounts.internode.on.net");
+  define("INTERNODE_HOST", "customer-webtools-api.internode.on.net");
   define("INTERNODE_URI", "/cgi-bin/padsl-usage");
   define("INTERNODE_LOGIN", "/cgi-bin/login");
   // define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode.cache");
@@ -67,14 +70,15 @@
   define("INTERNODE_TEXT", 2);
   define("INTERNODE_RAW", 3);
   define("INTERNODE_VERSION_CHECK", 4);
+  define("INTERNODE_CISCO79XX", 5);
  
   define("IMAGE_BORDER", 10);
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "11");
+  define("INTERNODE_VERSION", "12");
 
-  define("CAFUEGO_HOST", "www.cafuego.net");
+  define("CAFUEGO_HOST", "archive.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
 
   class history {
@@ -202,7 +206,7 @@
       curl_setopt($o, CURLOPT_POST, 1);
       curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
     
-      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
+      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004-2008 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
       curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 0);
     
@@ -239,24 +243,26 @@
     }
 
     function display($param) {
+      if ($param != INTERNODE_VERSION_CHECK)
+        $this->init();
+
       switch($param) {
         case INTERNODE_HISTORY:
-	  $this->init();
 	  $this->display_history();
 	  break;
         case INTERNODE_TEXT:
-	  $this->init();
 	  $this->display_text();
 	  break;
         case INTERNODE_RAW:
-	  $this->init();
 	  $this->display_raw();
 	  break;
         case INTERNODE_VERSION_CHECK:
 	  $this->version_check();
 	  break;
+        case INTERNODE_CISCO79XX:
+          $this->display_cisco79xx();
+          break;
         default:
-	  $this->init();
 	  $this->display_rss();
 	  break;
       }
@@ -279,7 +285,7 @@
       if(!$this->unlimited) {
         printf("quota|%.2f Gb\n", $this->quota/1000 );
         printf("remaining|%.2f Gb\n", $this->remaining/1000 );
-        printf("percentage|%.2f Gb\n", $this->percentage );
+        printf("percentage|%.2f %%\n", $this->percentage );
         printf("remaining per day|%.2f Mb\n", ($this->remaining / $this->days_remaining) );
       }
     }
@@ -326,6 +332,23 @@
       echo "</rss>\n";
     }
 
+    function display_cisco79xx() {
+      header("Content-type: text/xml");
+      echo "<?xml version=\"1.0\"?>\n";
+      echo "<CiscoIPPhoneText>\n";
+      echo " <Title>Internode Usage</Title>\n";
+      echo " <Text>";
+      printf("Used: %.2f GB\n", $this->used/1000 );
+      if(!$this->unlimited) {
+        printf("Quota: %.2f GB\n", $this->quota/1000 );
+        printf("Remaining: %.2f GB (%.2f %%)\n", $this->remaining/1000, $this->percentage );
+        printf("Remaining per Day: %.2f MB\n", ($this->remaining / $this->days_remaining) );
+      }
+      echo " </Text>\n";
+      echo " <Prompt>".INTERNODE_USERNAME."</Prompt>\n";
+      echo "</CiscoIPPhoneText>\n";
+    }
+      
     function display_history() {
       if(!function_exists("imagepng")) {
         die("Sorry, this PHP installation cannot create dynamic PNG images");
