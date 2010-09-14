@@ -15,7 +15,7 @@
    *    or: http://yourwebhost.com.au/internode.php?DISPLAY=3 for a raw data dump.
    *    or: http://yourwebhost.com.au/internode.php?DISPLAY=4 for a version check.
    *
-   * Required software: php4 with gd and curl support.
+   * Required software: php5 with gd, curl and xml support.
    *
    * 19/05/2004 - Initial revision.
    *              The software fetches and caches usage stats. Then displays either
@@ -43,6 +43,9 @@
    * 22/10/2008 - Updated padsl-usage API url.
    *              Added support for Cisco 79XX IP phone output. The patch for this was provided
    *              by `michael' on Whirlpool. http://forums.whirlpool.net.au/forum-user.cfm?id=53603
+   * 15/09/2010 - Rewrite to use the REST API. Note that I dislike SimpleXML. A lot.
+   *              simplexml is a new requirement. THis also means the script will likely
+   *              bomb on php4, so make sure you use php5. 5.2 seems to be fine.
    */
 
   // Your username and password, change these.
@@ -52,18 +55,18 @@
   // Graph area size, tweak if you really must.
   define("IMAGE_WIDTH", 640);
   define("IMAGE_HEIGHT", 480);
-  
-  // Number of recent days to graph data for. (0 = all)
-  define("GRAPH_DAYS", 0);
+
+  // Number of recent days to graph data for. (0 = all (=365))
+  define("GRAPH_DAYS", 256);
 
   // Don't modify anything else!
   define("DISPLAY", INTERNODE_USAGE);
 
   define("INTERNODE_HOST", "customer-webtools-api.internode.on.net");
-  define("INTERNODE_URI", "/cgi-bin/padsl-usage");
+  define("INTERNODE_URI", "/api/v1.5");
   define("INTERNODE_LOGIN", "/cgi-bin/login");
-  // define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode.cache");
-  define("INTERNODE_CACHE", "./tmp/internode.cache");
+  // define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode-".INTERNODE_USERNAME.".cache");
+  define("INTERNODE_CACHE", "./tmp/internode-cache.".INTERNODE_USERNAME);
 
   define("INTERNODE_USAGE", 0);
   define("INTERNODE_HISTORY", 1);
@@ -76,24 +79,22 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "12");
+  define("INTERNODE_VERSION", "13");
 
-  define("CAFUEGO_HOST", "archive.cafuego.net");
+  define("CAFUEGO_HOST", "www.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
+
+  define("BYTE_A_KB", 1000);
+  define("BYTE_A_MB", BYTE_A_KB * BYTE_A_KB);
+  define("BYTE_A_GB", BYTE_A_MB * BYTE_A_MB);
 
   class history {
     var $date = null;
     var $usage = 0;
-    function history($str) {
+    function history($data) {
       $arr = explode(" ", $str);
-      $this->date = mktime(0, 0, 0, substr($arr[0], 2, 2), substr($arr[0], 4, 2), substr($arr[0], 0, 2));
-      $this->usage = $this->floatval($arr[1]);
-    }
-    function floatval($strValue) {
-      $floatValue = ereg_replace("(^[0-9]*)(\\.|,)([0-9]*)(.*)", "\\1.\\3", $strValue);
-      if (!is_numeric($floatValue)) $floatValue = ereg_replace("(^[0-9]*)(.*)", "\\1", $strValue);
-      if (!is_numeric($floatValue)) $floatValue = 0;
-      return $floatValue;
+      $this->date = strtotime($data['@attributes']['day']);
+      $this->usage = $data['traffic'] / BYTE_A_MB;
     }
   }
 
@@ -110,6 +111,11 @@
     var $p_end = 0;
     var $unlimited = false;
 
+    var $service_id = 0;
+    var $type = null;
+    var $plan = null;
+    var $user = null;
+
     function internode() {
       // This is just an empty wrapper, quick hack to run the version check
       // without a cache refresh.
@@ -117,6 +123,8 @@
     }
 
     function init() {
+      $url = "https://".INTERNODE_HOST.INTERNODE_URI;
+      $this->get_service_id($url);
 
       if(!file_exists(INTERNODE_CACHE))
         $this->refresh_cache();
@@ -127,84 +135,94 @@
     }
 
     function refresh_cache() {
-      $usage = $this->fetch_data(INTERNODE_USAGE);
-      $history = $this->fetch_data(INTERNODE_HISTORY);
+      // So many arrays, this is starting to look like Drupal.
+      $url = "https://".INTERNODE_HOST . INTERNODE_URI .'/'. $this->service_id;
+      $data = $this->fetch_data($url . '/service');
+      $service = $data['api']['service'];
+      $data = $this->fetch_data($url . '/usage');
+      $usage = $data['api']['traffic'];
+      $data = $this->fetch_data($url . '/history');
+      $history = $data['api']['usagelist'];
+
+      // Just serialize it and write it to file. Way easier.
+      $cache = array('service' => $service, 'usage' => $usage, 'history' => $history);
       $fp = fopen(INTERNODE_CACHE, "w");
       if($fp) {
-        fputs($fp, $usage);
-        fputs($fp, $history);
+        fputs($fp, serialize($cache));
         fclose($fp);
+      }
+      else {
+        die('Cannot write to cache file' . INTERNODE_CACHE);
       }
     }
 
     function read_cache() {
-      if($fp = fopen(INTERNODE_CACHE, "r") ) {
-        $tmp = trim(fgetss($fp, 4096));
-        $arr = explode(" ", $tmp);
+      $data = file_get_contents(INTERNODE_CACHE);
+      $cache = unserialize($data);
 
-	// Do a bit of half-arsed error checking.
-	// 
-        if(intval($arr[0] ) == 0)
-	  return $tmp;
-
-        $this->used = $arr[0];
-        $this->quota = $arr[1];
-	if($this->quota > 0) {
-          $this->remaining = $this->quota - $this->used;
-          $this->percentage = 100 * $this->used / $this->quota;
-	} else {
-	  $this->unlimited = true;
-	  $this->remaining = 0;
-	  $this->percentage = 0;
-	}
-        $this->history = array();
-	$this->p_start = $this->period_start($arr[2]);
-	$this->p_end = $this->period_end($arr[2]);
-	$this->days_remaining = $this->get_remaining_days( $arr[2] );
-	while(!feof($fp)) {
-	  if( ($str = trim(fgetss($fp, 4096))) != "") {
-	    array_push($this->history, new history($str) );
-	  }
-	}
-	fclose($fp);
-
-	if(GRAPH_DAYS) {
-          // Chop the history array.
-	  $this->history = array_slice($this->history, (count($this->history) - GRAPH_DAYS) );
-	}
-
+      $this->quota = $cache['service']['quota'];
+      $this->used = $cache['usage'];
+      if($this->quota > 0) {
+        $this->remaining = $this->quota - $this->used;
+        $this->percentage = 100 * $this->used / $this->quota;
       }
+      else {
+        $this->unlimited = true;
+        $this->remaining = 0;
+        $this->percentage = 0;
+      }
+      $this->history = array();
+      $this->p_start = $this->period_start($cache['service']['rollover']);
+      $this->p_end = $this->period_end($cache['service']['rollover']);
+      $this->days_remaining = $this->get_remaining_days($cache['service']['rollover']);
+      foreach ($cache['history']['usage'] as $usage) {
+        array_push($this->history, new history($usage));
+      }
+
+      if(GRAPH_DAYS) {
+        // Chop the history array. Though admittedly I only have 365 days now.
+        $this->history = array_slice($this->history, (count($this->history) - GRAPH_DAYS) );
+      }
+
+      $this->type = $cache['service']['@attributes']['type'];
+      $this->plan = $cache['service']['plan'];
+      $this->user = $cache['service']['username'];
+
       return NULL;
     }
 
     function get_remaining_days($str) {
-      list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
-      return intval( (strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d)) - time()) / (60*60*24)) + 1;
+      return intval( ((strtotime($str)) - time()) / (60*60*24)) + 1;
     }
 
     // the d++ and m-- calls work in php4 but this roll-over functionality MAY be removed in php5.
     function period_start($str) {
-      list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
+      list($y,$m,$d) = sscanf($str, "%04d-%02d-%02d");
       $m--;
       return strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d));
     }
 
     function period_end($str) {
-      list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
+      list($y,$m,$d) = sscanf($str, "%04d-%02d-%02d");
       $d--;
       return strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d));
     }
 
-    function fetch_data($param) {
-      $url = "https://".INTERNODE_HOST.INTERNODE_URI;
+    function get_service_id($url, $param = NULL) {
+      $data = $this->fetch_data($url);
+      $this->service_id = $data['api']['services']['service'];
+    }
 
+    function fetch_data($url) {
       $o = curl_init();
 
       curl_setopt($o, CURLOPT_URL, $url);
       curl_setopt($o, CURL_VERBOSE, 1);
       curl_setopt($o, CURLOPT_RETURNTRANSFER, 1);
-      curl_setopt($o, CURLOPT_POST, 1);
-      curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
+      curl_setopt($o, CURLOPT_GET, 1);
+      curl_setopt($o, CURLOPT_USERPWD, INTERNODE_USERNAME . ':' . INTERNODE_PASSWORD);
+      curl_setopt($o, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+      // curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
     
       curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004-2008 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
@@ -216,32 +234,10 @@
         $result = "CURL Error ". curl_errno($o) .": ". curl_error($o);
       curl_close($o);
 
-/*
-      if($param == INTERNODE_HISTORY)
-        $command = "curl -k -d username=".INTERNODE_USERNAME." -d password=".INTERNODE_PASSWORD." -d history=1 -d iso=1 {$url}";
-      else
-        $command = "curl -k -d username=".INTERNODE_USERNAME." -d password=".INTERNODE_PASSWORD." -d iso=1 {$url}";
-      $p = popen($command, "r");
-      $result = fread($p,32768);
-      pclose($p);
-*/
-
-      return $result;
+      return xml2arr( new SimpleXMLElement($result) );
+      
     }
     
-    function make_data($param) {
-      $ret = array(
-        'username' => INTERNODE_USERNAME,	// ."@internode.on.net",
-        'password' => INTERNODE_PASSWORD,
-        'iso' => 1
-      );
-    
-      if($param == INTERNODE_HISTORY)
-        $ret['history'] = 1;
-    
-      return $ret;
-    }
-
     function display($param) {
       if ($param != INTERNODE_VERSION_CHECK)
         $this->init();
@@ -280,13 +276,14 @@
     function display_text() {
       header("Content-type: text/plain");
       echo   "generator|Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()." ".strftime("%d/%m/%Y %H:%M:%S %Z")."\n";
-      echo   "account|".INTERNODE_USERNAME."@internode.on.net\n";
-      printf("used|%.2f Gb\n", $this->used/1000 );
+      echo   "account|" . $this->user . "\n";
+      echo   "plan|" . $this->plan . " " . $this->type . "\n";
+      printf("used|%s\n", format_size($this->used) );
       if(!$this->unlimited) {
-        printf("quota|%.2f Gb\n", $this->quota/1000 );
-        printf("remaining|%.2f Gb\n", $this->remaining/1000 );
+        printf("quota|%s\n", format_size($this->quota) );
+        printf("remaining|%s\n", format_size($this->remaining) );
         printf("percentage|%.2f %%\n", $this->percentage );
-        printf("remaining per day|%.2f Mb\n", ($this->remaining / $this->days_remaining) );
+        printf("remaining per day|%s\n", format_size($this->remaining / $this->days_remaining) );
       }
     }
 
@@ -296,27 +293,27 @@
       echo "<!-- RSS generated by Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()." ".strftime("%d/%m/%Y %H:%M:%S %Z")." -->\n";
       echo "<rss version=\"2.0\" xmlns:blogChannel=\"http://backend.userland.com/blogChannelModule\">\n";
       echo "<channel>\n";
-      echo "<title>Internode ADSL Usage</title>\n";
+      echo "<title>" . $this->plan . " " . $this->type . " Usage</title>\n";
       echo "<link>https://".INTERNODE_HOST.INTERNODE_LOGIN."</link>\n";
-      echo "<description>Internode ADSL Usage for ".INTERNODE_USERNAME."@internode.on.net</description>\n";
+      echo "<description>" . $this->plan . " " . $this->type . " Usage for " . $this->user . "</description>\n";
       echo "<language>en-au</language>\n";
       echo "<copyright>Copyright 2004 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
       echo "<docs>http://www.cafuego.net/internode-usage.php</docs>\n";
       echo "<generator>Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()."</generator>\n";
-      echo "<managingEditor>".INTERNODE_USERNAME."@internode.on.net</managingEditor>\n";
+      echo "<managingEditor>" . $this->user . "</managingEditor>\n";
       echo "<webMaster>webmaster@internode.on.net</webMaster>\n";
       echo "<ttl>3600</ttl>\n";
       echo "<item>\n";
-      printf("  <title>Used: %.2f Gb</title>\n", $this->used/1000 );
+      printf("  <title>Used: %s</title>\n", format_size($this->used) );
       printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
       echo "</item>\n";
       if(!$this->unlimited) {
         echo "<item>\n";
-        printf("  <title>Quota: %d Gb</title>\n", $this->quota/1000 );
+        printf("  <title>Quota: %s</title>\n", format_size($this->quota) );
         printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
-        printf("  <title>Remaining: %.2f Gb</title>\n", $this->remaining/1000 );
+        printf("  <title>Remaining: %s</title>\n", format_size($this->remaining) );
         printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
@@ -324,7 +321,7 @@
         printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
-        printf("  <title>Remaining per day: %.2f Mb</title>\n", ($this->remaining / $this->days_remaining) );
+        printf("  <title>Remaining per day: %s</title>\n", format_size($this->remaining / $this->days_remaining) );
         printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
       }
@@ -338,17 +335,17 @@
       echo "<CiscoIPPhoneText>\n";
       echo " <Title>Internode Usage</Title>\n";
       echo " <Text>";
-      printf("Used: %.2f GB\n", $this->used/1000 );
+      printf("Used: %s\n", format_size($this->used) );
       if(!$this->unlimited) {
-        printf("Quota: %.2f GB\n", $this->quota/1000 );
-        printf("Remaining: %.2f GB (%.2f %%)\n", $this->remaining/1000, $this->percentage );
-        printf("Remaining per Day: %.2f MB\n", ($this->remaining / $this->days_remaining) );
+        printf("Quota: %s\n", format_size($this->quota) );
+        printf("Remaining: %s (%.2f %%)\n", format_size($this->remaining), $this->percentage );
+        printf("Remaining per Day: %s\n", format_size($this->remaining / $this->days_remaining) );
       }
       echo " </Text>\n";
       echo " <Prompt>".INTERNODE_USERNAME."</Prompt>\n";
       echo "</CiscoIPPhoneText>\n";
     }
-      
+
     function display_history() {
       if(!function_exists("imagepng")) {
         die("Sorry, this PHP installation cannot create dynamic PNG images");
@@ -401,18 +398,19 @@
 
       // Calculate bar width.
       //
-      if(!GRAPH_DAYS || (GRAPH_DAYS > $this->history) )
-        $dx = 1;
-      else
-        $dx = ( IMAGE_WIDTH - IMAGE_BORDER * 2 ) / (count($this->history)+1);
+      $dx = ( IMAGE_WIDTH - IMAGE_BORDER * 2 ) / (count($this->history)+1);
 
       // Find scale maximum.
       //
+      // ... and avoid integer overflow on 32bit for the $total.
+      $total = (float)0;
       for($i = 0; $i < count($this->history); $i++) {
         if($this->history[$i]->usage > $max)
           $max = $this->history[$i]->usage;
-        $total += $this->history[$i]->usage;
+        $total += (float)$this->history[$i]->usage;
       }
+      // Don't let the graph touch the top.
+      $max += BYTE_A_KB;
 
       // Find where we need to right-align the y axis.
       //
@@ -425,10 +423,10 @@
 
       // Draw scale figures on y axis.
       //
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_max, IMAGE_BORDER-(imagefontheight(2)/2), sprintf("%.1f Mb", $max), $black);
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_mmt, IMAGE_BORDER+$dy-(imagefontheight(2)/2), sprintf("%.1f Mb", ($max*3/4)), $black);
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_med, IMAGE_BORDER+(2*$dy)-(imagefontheight(2)/2), sprintf("%.1f Mb", ($max/2)), $black);
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_mmb, IMAGE_BORDER+(3*$dy)-(imagefontheight(2)/2), sprintf("%.1f Mb", ($max/4)), $black);
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_max, IMAGE_BORDER-(imagefontheight(2)/2), sprintf("%.2f Gb", $max/1000), $black);
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_mmt, IMAGE_BORDER+$dy-(imagefontheight(2)/2), sprintf("%.2f Gb", $max*3/4000), $black);
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_med, IMAGE_BORDER+(2*$dy)-(imagefontheight(2)/2), sprintf("%.2f Gb", ($max/2000)), $black);
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_mmb, IMAGE_BORDER+(3*$dy)-(imagefontheight(2)/2), sprintf("%.2f Gb", ($max/4000)), $black);
       imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_min, IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-(imagefontheight(2)/2), "0.0 Mb", $black);
 
       // This needs to be twiddled if we have more history than space to draw in...
@@ -523,11 +521,11 @@
         $string = $string = sprintf("Graph Interval: %d days   Remaining: %d days", count($this->history), $this->days_remaining);
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
-        $string = sprintf("Daily Transfer: %.1f Mb   Total Transfer: %.1f Gb", ($total / count($this->history)), $total/1000);
+        $string = sprintf("Daily Transfer: %s   Total Transfer: %s", format_size($total / count($this->history)), format_size($total));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
 
 	if($this->remaining > 0) {
-          $string = sprintf("Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
+          $string = sprintf("Daily Remaining: %s   Total Remaining: %s", format_size($this->remaining / $this->days_remaining), format_size($this->remaining) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
 	} else {
 	  $over = abs($this->remaining);
@@ -552,14 +550,14 @@
 	  } else {
 	    $unit = "Mb";
 	  }
-          $string = sprintf("WARNING: You are %.1f %s over quota!", $over, $unit );
+          $string = sprintf("WARNING: You are %s over quota!", $this->format_size($over) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
 	}
       } else {
         $string = $string = sprintf("Graph Interval: %d days", count($this->history));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
-        $string = sprintf("Daily Transfer: %.1f Mb   Total Transfer: %.1f Gb", ($total / count($this->history)), $total/1000);
+        $string = sprintf("Daily Transfer: %s   Total Transfer: %s", $this->format_size($total / count($this->history)), $this->format_size($total/1000));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
       }
 
@@ -578,7 +576,7 @@
 
       // And now just add a footer.
       //
-      $footer = sprintf("PADSL usage graph %s - %s for %s@internode.on.net", strftime("%d/%m/%Y", $this->history[0]->date), strftime("%d/%m/%Y", $this->history[count($this->history)-1]->date), INTERNODE_USERNAME );
+      $footer = sprintf("%s %s usage graph %s - %s for %s", $this->plan, $this->type, strftime("%d/%m/%Y", $this->history[0]->date), strftime("%d/%m/%Y", $this->history[count($this->history)-1]->date), $this->user );
       imagestring($im, 3, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(3) * (strlen($footer)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM-IMAGE_BORDER, $footer, $black);
 
       $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004 - 2007 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
@@ -591,12 +589,67 @@
     }
   }
 
+  // Lifted from php.net - because SimpleXML OBjects are just too awful to deal with.
+  function xml2arr($arrObjData, $arrSkipIndices = array()) {
+    $arrData = array();
+    
+    // if input is object, convert into array
+    if (is_object($arrObjData)) {
+        $arrObjData = get_object_vars($arrObjData);
+    }
+    
+    if (is_array($arrObjData)) {
+        foreach ($arrObjData as $index => $value) {
+            if (is_object($value) || is_array($value)) {
+                $value = xml2arr($value, $arrSkipIndices); // recursive call
+            }
+            if (in_array($index, $arrSkipIndices)) {
+                continue;
+            }
+            $arrData[$index] = $value;
+        }
+    }
+    return $arrData;
+  }
+
+  // Lifted from Drupal 7 API :-)
+  function format_size($size) {
+    if ($size < BYTE_A_KB) {
+      return str_replace('@size', round($size, 2), '@size bytes');
+    }
+    else {
+      $size = $size / BYTE_A_KB; // Convert bytes to kilobytes.
+      $units = array(
+        '@size KB',
+        '@size MB',
+        '@size GB',
+        '@size TB',
+        '@size PB',
+        '@size EB',
+        '@size ZB',
+        '@size YB',
+      );
+      foreach ($units as $unit) {
+        if (round($size, 2) >= BYTE_A_KB) {
+          $size = $size / BYTE_A_KB;
+        }
+        else {
+          break;
+        }
+      }
+      return str_replace('@size', round($size, 2), $unit);
+    }
+}
+
   // Check installation options.
   //
   if(!function_exists('curl_init'))
     die("Your PHP installation is missing the CURL extension.");
   if(!CURLOPT_SSLVERSION)
     die("Your CURL version does not have SSL support enabled.");
+  if(!function_exists('simplexml_load_string'))
+    die("Your PHP installation is missing the XML extension.");
+
   if(!file_exists(INTERNODE_CACHE)) {
     if(!$fp = @fopen(INTERNODE_CACHE, "w")) {
       die("Cannot create cache file '".INTERNODE_CACHE."'.\n\nPlease set upload_tmp_dir to a directory with mode 1777 in your php.ini");
