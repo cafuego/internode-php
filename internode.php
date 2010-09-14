@@ -5,9 +5,9 @@
    * Internode PADSL usage.
    *
    * Written by peter Lieverdink <me@cafuego.net>
-   * Copyright 2004 Intellectual Property Holdings Pty. Ltd.
+   * Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.
    *
-   * License: GPL; See http://www.gnu.org/copyleft/gpl.html#SEC1 for a full version.
+   * License: GPLv2; See http://www.gnu.org/copyleft/gpl.html#SEC1 for a full version.
    *
    * Usage: http://yourwebhost.com.au/internode.php for the RSS feed
    *    or: http://yourwebhost.com.au/internode.php?DISPLAY=1 for the PNG image.
@@ -33,6 +33,12 @@
    * 01/02/2005 - Happy new year!
    *              Added detection of unlimited plans, added tuneable graph, added long-term
    *              average graph.
+   * 01/02/2006 - Aiyee! It's been a year!
+   *              Added <link /> element to the rss display, to placate firefox live
+   *              bookmark handling and entered data in <docs /> tag, so feed validates.
+   * 14/02/2006 - Happy Valentines Day Donna!
+   *              Incrememted version number to 10, coz I am very special sometimes and
+   *              forgot when I fixed the previous set of bugs ;-)
    */
 
   // Your username and password, change these.
@@ -64,7 +70,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "9");
+  define("INTERNODE_VERSION", "10");
 
   define("CAFUEGO_HOST", "www.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
@@ -132,9 +138,6 @@
 
         $this->used = $arr[0];
         $this->quota = $arr[1];
-
-	// See, if quota is set to '0', we have a lucky bastard on an
-	// unlimited plan, which means we need not display remaining &c.
 	if($this->quota > 0) {
           $this->remaining = $this->quota - $this->used;
           $this->percentage = 100 * $this->used / $this->quota;
@@ -193,7 +196,7 @@
       curl_setopt($o, CURLOPT_POST, 1);
       curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
     
-      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
+      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
       curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 2);
     
@@ -271,27 +274,32 @@
       echo "<link>https://".INTERNODE_HOST.INTERNODE_LOGIN."</link>\n";
       echo "<description>Internode ADSL Usage for ".INTERNODE_USERNAME."@internode.on.net</description>\n";
       echo "<language>en-au</language>\n";
-      echo "<copyright>Copyright 2004 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
-      echo "<docs></docs>\n";
+      echo "<copyright>Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
+      echo "<docs>http://www.cafuego.net/internode-usage.php</docs>\n";
       echo "<generator>Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()."</generator>\n";
       echo "<managingEditor>".INTERNODE_USERNAME."@internode.on.net</managingEditor>\n";
       echo "<webMaster>webmaster@internode.on.net</webMaster>\n";
       echo "<ttl>3600</ttl>\n";
       echo "<item>\n";
       printf("  <title>Used: %.2f Gb</title>\n", $this->used/1000 );
+      printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
       echo "</item>\n";
       if(!$this->unlimited) {
         echo "<item>\n";
         printf("  <title>Quota: %d Gb</title>\n", $this->quota/1000 );
+        printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
         printf("  <title>Remaining: %.2f Gb</title>\n", $this->remaining/1000 );
+        printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
         printf("  <title>Percentage: %.2f %% </title>\n", $this->percentage );
+        printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
         printf("  <title>Remaining per day: %.2f Mb</title>\n", ($this->remaining / $this->days_remaining) );
+        printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
       }
       echo "</channel>\n";
@@ -304,7 +312,7 @@
       }
     
       header("Content-type: image/png");
-      header("Content-disposition: inline; filename=Internode_Usage_Graph.png");
+      header("Content-disposition: inline; filename=\"Internode_Usage_Graph.png\"");
 
       // Create image of specified size (and leave space for the borders)
       //
@@ -440,7 +448,6 @@
           $string = sprintf("Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
 	} else {
-	  // Whoops, over quota! ;-)
           $string = sprintf("WARNING: You are %.1f Gb over quota!", abs($this->remaining/1000) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
 	}
@@ -470,7 +477,7 @@
       $footer = sprintf("PADSL usage graph %s - %s for %s@internode.on.net", strftime("%d/%m/%Y", $this->history[0]->date), strftime("%d/%m/%Y", $this->history[count($this->history)-1]->date), INTERNODE_USERNAME );
       imagestring($im, 3, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(3) * (strlen($footer)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM-IMAGE_BORDER, $footer, $black);
 
-      $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
+      $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
       imagestring($im, 1, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(1) * (strlen($copyright)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM+IMAGE_BORDER, $copyright, $black);
 
       // Output image and deallocate memory.
@@ -506,6 +513,4 @@
   } else {
     $in->display( intval($_GET['DISPLAY']) );
   }
-
-  /* No llamas were harmed during the creation of this tool */
 ?>
