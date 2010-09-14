@@ -4,8 +4,8 @@
    * PHP classes and routines for retrieving, caching, formatting and displaying
    * Internode PADSL usage.
    *
-   * Written by Peter Lieverdink <me@cafuego.net>
-   * Copyright 2004 - 2005 Intellectual Property Holdings Pty. Ltd.
+   * Written by peter Lieverdink <me@cafuego.net>
+   * Copyright 2004 Intellectual Property Holdings Pty. Ltd.
    *
    * License: GPL; See http://www.gnu.org/copyleft/gpl.html#SEC1 for a full version.
    *
@@ -30,13 +30,9 @@
    * 12/12/2004 - Added a days remaining counter and using this to generate averge
    *              Mb per day remaining graph and numbers - an idea by Andrew Brightman
    *              who never got back to me with his patch :-)
-   *              Also redid the 'moving weekly average' algorithm. Now it calculates
-   *              based on TODAY-3 -> TODAY+3 as opposed to TODAY-6. And the graph displays
-   *              the current period.
-   * 12/01/2005 - Happy New Year!
-   *              Fixed a parser bug that didn't encode special chars in the password.
-   *              Fixed the period start/end date calculation.
-   *              Removed duplicate </channel> line from the RSS display.
+   * 01/02/2005 - Happy new year!
+   *              Added detection of unlimited plans, added tuneable graph, added long-term
+   *              average graph.
    */
 
   // Your username and password, change these.
@@ -46,6 +42,9 @@
   // Graph area size, tweak if you really must.
   define("IMAGE_WIDTH", 550);
   define("IMAGE_HEIGHT", 350);
+  
+  // Number of recent days to graph data for. (0 = all)
+  define("GRAPH_DAYS", 0);
 
   // Don't modify anything else!
   define("DISPLAY", INTERNODE_USAGE);
@@ -54,7 +53,6 @@
   define("INTERNODE_URI", "/cgi-bin/padsl-usage");
   define("INTERNODE_LOGIN", "/cgi-bin/login");
   define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode.cache");
-  // define("INTERNODE_CACHE", "./tmp/internode.cache");
 
   define("INTERNODE_USAGE", 0);
   define("INTERNODE_HISTORY", 1);
@@ -66,7 +64,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "8");
+  define("INTERNODE_VERSION", "9");
 
   define("CAFUEGO_HOST", "www.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
@@ -98,6 +96,7 @@
     var $days_remaining = 0;
     var $p_start = 0;
     var $p_end = 0;
+    var $unlimited = false;
 
     function internode() {
 
@@ -133,18 +132,34 @@
 
         $this->used = $arr[0];
         $this->quota = $arr[1];
-        $this->remaining = $this->quota - $this->used;
-        $this->percentage = 100 * $this->used / $this->quota;
+
+	// See, if quota is set to '0', we have a lucky bastard on an
+	// unlimited plan, which means we need not display remaining &c.
+	if($this->quota > 0) {
+          $this->remaining = $this->quota - $this->used;
+          $this->percentage = 100 * $this->used / $this->quota;
+	} else {
+	  $this->unlimited = true;
+	  $this->remaining = 0;
+	  $this->percentage = 0;
+	}
         $this->history = array();
 	$this->p_start = $this->period_start($arr[2]);
 	$this->p_end = $this->period_end($arr[2]);
 	$this->days_remaining = $this->get_remaining_days($arr[2]);
+	if(!$this->days_remaining)
+	  $this->days_remaining = 1;
 	while(!feof($fp)) {
 	  if( ($str = trim(fgetss($fp, 4096))) != "") {
 	    array_push($this->history, new history($str) );
 	  }
 	}
 	fclose($fp);
+
+	if(GRAPH_DAYS) {
+          // Chop the history array.
+	  $this->history = array_slice($this->history, (count($this->history) - GRAPH_DAYS) );
+	}
       }
       return NULL;
     }
@@ -163,7 +178,7 @@
 
     function period_end($str) {
       list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
-      $d++;
+      $d--;
       return strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d));
     }
 
@@ -178,7 +193,7 @@
       curl_setopt($o, CURLOPT_POST, 1);
       curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
     
-      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004 - 2005 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
+      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
       curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 2);
     
@@ -193,8 +208,8 @@
     
     function make_data($param) {
       $ret = array(
-        'username' => rawurlencode(INTERNODE_USERNAME).'@internode.on.net',
-        'password' => rawurlencode(INTERNODE_PASSWORD),
+        'username' => INTERNODE_USERNAME."@internode.on.net",
+        'password' => INTERNODE_PASSWORD,
         'iso' => 1
       );
     
@@ -238,10 +253,12 @@
       echo   "generator|Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()." ".strftime("%d/%m/%Y %H:%M:%S %Z")."\n";
       echo   "account|".INTERNODE_USERNAME."@internode.on.net\n";
       printf("used|%.2f Gb\n", $this->used/1000 );
-      printf("quota|%.2f Gb\n", $this->quota/1000 );
-      printf("remaining|%.2f Gb\n", $this->remaining/1000 );
-      printf("percentage|%.2f Gb\n", $this->percentage );
-      printf("remaining per day|%.2f Mb\n", ($this->remaining / $this->days_remaining) );
+      if(!$this->unlimited) {
+        printf("quota|%.2f Gb\n", $this->quota/1000 );
+        printf("remaining|%.2f Gb\n", $this->remaining/1000 );
+        printf("percentage|%.2f Gb\n", $this->percentage );
+        printf("remaining per day|%.2f Mb\n", ($this->remaining / $this->days_remaining) );
+      }
     }
 
     function display_rss() {
@@ -254,7 +271,7 @@
       echo "<link>https://".INTERNODE_HOST.INTERNODE_LOGIN."</link>\n";
       echo "<description>Internode ADSL Usage for ".INTERNODE_USERNAME."@internode.on.net</description>\n";
       echo "<language>en-au</language>\n";
-      echo "<copyright>Copyright 2004 - 2005 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
+      echo "<copyright>Copyright 2004 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
       echo "<docs></docs>\n";
       echo "<generator>Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()."</generator>\n";
       echo "<managingEditor>".INTERNODE_USERNAME."@internode.on.net</managingEditor>\n";
@@ -263,18 +280,20 @@
       echo "<item>\n";
       printf("  <title>Used: %.2f Gb</title>\n", $this->used/1000 );
       echo "</item>\n";
-      echo "<item>\n";
-      printf("  <title>Quota: %d Gb</title>\n", $this->quota/1000 );
-      echo "</item>\n";
-      echo "<item>\n";
-      printf("  <title>Remaining: %.2f Gb</title>\n", $this->remaining/1000 );
-      echo "</item>\n";
-      echo "<item>\n";
-      printf("  <title>Percentage: %.2f %% </title>\n", $this->percentage );
-      echo "</item>\n";
-      echo "<item>\n";
-      printf("  <title>Remaining per day: %.2f Mb</title>\n", ($this->remaining / $this->days_remaining) );
-      echo "</item>\n";
+      if(!$this->unlimited) {
+        echo "<item>\n";
+        printf("  <title>Quota: %d Gb</title>\n", $this->quota/1000 );
+        echo "</item>\n";
+        echo "<item>\n";
+        printf("  <title>Remaining: %.2f Gb</title>\n", $this->remaining/1000 );
+        echo "</item>\n";
+        echo "<item>\n";
+        printf("  <title>Percentage: %.2f %% </title>\n", $this->percentage );
+        echo "</item>\n";
+        echo "<item>\n";
+        printf("  <title>Remaining per day: %.2f Mb</title>\n", ($this->remaining / $this->days_remaining) );
+        echo "</item>\n";
+      }
       echo "</channel>\n";
       echo "</rss>\n";
     }
@@ -346,7 +365,10 @@
       // Draw usage bars and x axis.
       // When usage is NEGATIVE, draw bar UP anyway but in yellow.
       //
-      $prev_avg = 0;
+      imagesetthickness($im, 2);
+
+      $prev_avg_w = 0;
+      $prev_avg_m = 0;
       for($i = 0; $i < count($this->history); $i++) {
 	if($this->history[$i]->usage > 0) {
 	  $y = $this->history[$i]->usage * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
@@ -361,16 +383,39 @@
 	// Add weekly moving average.
 	if($i > 0) {
   	  for($j = ($i-3); $j <= ($i+3); $j++) {
-            $avg += abs($this->history[$j]->usage);
+	    if( $this->history[$j] ) {
+              $avg_w += abs($this->history[$j]->usage);
+	      $k_w++;
+	    }
 	  }
-	  $avg /= 7;
-	  $avg_y = $avg * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-	  $prev_avg_y = $prev_avg * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-	  imageline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i-0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$prev_avg_y),  IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i+0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$avg_y), $purple);
-	  $prev_avg = $avg;
-	  $avg = 0;
+	  $avg_w /= $k_w;
+	  $avg_w_y = $avg_w * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
+	  $prev_avg_w_y = $prev_avg_w * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
+	  imageline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i-0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$prev_avg_w_y),  IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i+0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$avg_w_y), $purple);
+	  $prev_avg_w = $avg_w;
+	  $avg_w = 0;
+	  $k_w = 0;
+	}
+
+	// Add quarterly moving average.
+	if($i > 0) {
+  	  for($j = ($i-44); $j <= ($i+44); $j++) {
+	    if( $this->history[$j] ) {
+              $avg_m += abs($this->history[$j]->usage);
+	      $k_m++;
+	    }
+	  }
+	  $avg_m /= $k_m;
+	  $avg_m_y = $avg_m * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
+	  $prev_avg_m_y = $prev_avg_m * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
+	  imageline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i-0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$prev_avg_m_y),  IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i+0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$avg_m_y), $red);
+	  $prev_avg_m = $avg_m;
+	  $avg_m = 0;
+	  $k_m = 0;
 	}
       }
+
+      imagesetthickness($im, 1);
 
       // Add overall average.
       $y = ($total / count($this->history)) * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
@@ -381,18 +426,31 @@
       imagedashedline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_WIDTH+IMAGE_BORDER_LEFT-IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), $orange);
 
       // Add some info/legend.
-      $string = $string = sprintf("Current period: %s - %s", strftime("%a %d %b '%y", $this->p_start), strftime("%a %d %b '%y", $this->p_end) );
+      $string = $string = sprintf("Current period: %s - %s", strftime("%a %d %b %Y", $this->p_start), strftime("%a %d %b %Y", $this->p_end) );
       imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 1), $string, $black);
 
-      $string = $string = sprintf("Graph Interval: %d days   Remaining: %d days", count($this->history), $this->days_remaining);
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
+      if(!$this->unlimited) {
+        $string = $string = sprintf("Graph Interval: %d days   Remaining: %d days", count($this->history), $this->days_remaining);
+        imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
-      $string = sprintf("Daily Transfer: %.1f Mb   Total Transfer: %.1f Gb", ($total / count($this->history)), $total/1000);
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
+        $string = sprintf("Daily Transfer: %.1f Mb   Total Transfer: %.1f Gb", ($total / count($this->history)), $total/1000);
+        imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
 
-      $string = sprintf("Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
+	if($this->remaining > 0) {
+          $string = sprintf("Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
+          imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
+	} else {
+	  // Whoops, over quota! ;-)
+          $string = sprintf("WARNING: You are %.1f Gb over quota!", abs($this->remaining/1000) );
+          imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
+	}
+      } else {
+        $string = $string = sprintf("Graph Interval: %d days", count($this->history));
+        imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
+        $string = sprintf("Daily Transfer: %.1f Mb   Total Transfer: %.1f Gb", ($total / count($this->history)), $total/1000);
+        imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
+      }
 
       // $string = sprintf("Graph: %d days   Daily Average: %.1f Mb   Total: %.1f Gb", count($this->history), ($total / count($this->history)), $total/1000);
       // imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), imagefontheight(2), $string, $blue);
@@ -412,7 +470,7 @@
       $footer = sprintf("PADSL usage graph %s - %s for %s@internode.on.net", strftime("%d/%m/%Y", $this->history[0]->date), strftime("%d/%m/%Y", $this->history[count($this->history)-1]->date), INTERNODE_USERNAME );
       imagestring($im, 3, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(3) * (strlen($footer)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM-IMAGE_BORDER, $footer, $black);
 
-      $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004 - 2005 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
+      $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
       imagestring($im, 1, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(1) * (strlen($copyright)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM+IMAGE_BORDER, $copyright, $black);
 
       // Output image and deallocate memory.
@@ -448,4 +506,6 @@
   } else {
     $in->display( intval($_GET['DISPLAY']) );
   }
+
+  /* No llamas were harmed during the creation of this tool */
 ?>
