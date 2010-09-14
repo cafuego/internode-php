@@ -27,8 +27,12 @@
    *              Use the long php open tag. 
    *              The script can now also display text-only data or a direct raw
    *              data dump. Version checking is supported. (Use DISPLAY=4)
-   * 24/10/2004 - New version, added SSL_DISABLE_VERIFY to make curl not vomit
-   *		  on whatever internode have done to their ssl cert.
+   * 12/12/2004 - Added a days remaining counter and using this to generate averge
+   *              Mb per day remaining graph and numbers - an idea by Andrew Brightman
+   *              who never got back to me with his patch :-)
+   *              Also redid the 'moving weekly average' algorithm. Now it calculates
+   *              based on TODAY-3 -> TODAY+3 as opposed to TODAY-6. And the graph displays
+   *              the current period.
    */
 
   // Your username and password, change these.
@@ -37,7 +41,7 @@
 
   // Graph area size, tweak if you really must.
   define("IMAGE_WIDTH", 550);
-  define("IMAGE_HEIGHT", 175);
+  define("IMAGE_HEIGHT", 350);
 
   // Don't modify anything else!
   define("DISPLAY", INTERNODE_USAGE);
@@ -46,6 +50,7 @@
   define("INTERNODE_URI", "/cgi-bin/padsl-usage");
   define("INTERNODE_LOGIN", "/cgi-bin/login");
   define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode.cache");
+  // define("INTERNODE_CACHE", "./tmp/internode.cache");
 
   define("INTERNODE_USAGE", 0);
   define("INTERNODE_HISTORY", 1);
@@ -57,7 +62,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "6");
+  define("INTERNODE_VERSION", "7");
 
   define("CAFUEGO_HOST", "www.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
@@ -86,12 +91,15 @@
     var $percentage = 0;
     var $history = null;
     var $error = null;
+    var $days_remaining = 0;
+    var $p_start = 0;
+    var $p_end = 0;
 
     function internode() {
 
-      // if(!file_exists(INTERNODE_CACHE))
+      if(!file_exists(INTERNODE_CACHE))
         $this->refresh_cache();
-      // else if( filemtime(INTERNODE_CACHE) < (time() - 3600))
+      else if( filemtime(INTERNODE_CACHE) < (time() - 3600))
         $this->refresh_cache();
 
       $this->error = $this->read_cache();
@@ -124,6 +132,9 @@
         $this->remaining = $this->quota - $this->used;
         $this->percentage = 100 * $this->used / $this->quota;
         $this->history = array();
+	$this->p_start = $this->period_start($arr[2]);
+	$this->p_end = $this->period_end($arr[2]);
+	$this->days_remaining = $this->get_remaining_days($arr[2]);
 	while(!feof($fp)) {
 	  if( ($str = trim(fgetss($fp, 4096))) != "") {
 	    array_push($this->history, new history($str) );
@@ -132,6 +143,24 @@
 	fclose($fp);
       }
       return NULL;
+    }
+
+    function get_remaining_days($str) {
+      list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
+      return intval( (strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d)) - time()) / (60*60*24));
+    }
+
+    // the d++ and m-- calls work in php4 but this roll-over functionality MAY be removed in php5.
+    function period_start($str) {
+      list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
+      $d++;
+      $m--;
+      return strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d));
+    }
+
+    function period_end($str) {
+      list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
+      return strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d));
     }
 
     function fetch_data($param) {
@@ -145,8 +174,9 @@
       curl_setopt($o, CURLOPT_POST, 1);
       curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
     
-      curl_setopt ($o, CURLOPT_SSL_VERIFYPEER, false);
-      curl_setopt ($o, CURLOPT_SSL_VERIFYHOST, false);
+      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
+      curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
+      curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 2);
     
       $result = curl_exec($o); // run the whole process
     
@@ -203,10 +233,11 @@
       header("Content-type: text/plain");
       echo   "generator|Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()." ".strftime("%d/%m/%Y %H:%M:%S %Z")."\n";
       echo   "account|".INTERNODE_USERNAME."@internode.on.net\n";
-      printf("used|%.2f\n", $this->used/1000 );
-      printf("quota|%.2f\n", $this->quota/1000 );
-      printf("remaining|%.2f\n", $this->remaining/1000 );
-      printf("percentage|%.2f\n", $this->percentage );
+      printf("used|%.2f Gb\n", $this->used/1000 );
+      printf("quota|%.2f Gb\n", $this->quota/1000 );
+      printf("remaining|%.2f Gb\n", $this->remaining/1000 );
+      printf("percentage|%.2f Gb\n", $this->percentage );
+      printf("remaining per day|%.2f Mb\n", ($this->remaining / $this->days_remaining) );
     }
 
     function display_rss() {
@@ -237,6 +268,10 @@
       echo "<item>\n";
       printf("  <title>Percentage: %.2f %% </title>\n", $this->percentage );
       echo "</item>\n";
+      echo "<item>\n";
+      printf("  <title>Remaining per day: %.2f Mb</title>\n", ($this->remaining / $this->days_remaining) );
+      echo "</item>\n";
+      echo "</channel>\n";
       echo "</channel>\n";
       echo "</rss>\n";
     }
@@ -247,6 +282,7 @@
       }
     
       header("Content-type: image/png");
+      header("Content-disposition: inline; filename=Internode_Usage_Graph.png");
 
       // Create image of specified size (and leave space for the borders)
       //
@@ -257,10 +293,12 @@
       $white = imagecolorallocate($im, 255,255,255);
       $black = imagecolorallocate($im, 0,0,0);
       $red = imagecolorallocate($im, 224,0,0);
-      $green = imagecolorallocate($im, 0,224,0);
-      $blue = imagecolorallocate($im, 0,0,224);
-      $orange = imagecolorallocate($im, 224,224,0);
-      $purple = imagecolorallocate($im, 224,0,224);
+      $green = imagecolorallocate($im, 0,204,0);
+      $darkgreen = imagecolorallocate($im, 0, 102,0);
+      $blue = imagecolorallocate($im, 0,0,204);
+      $orange = imagecolorallocate($im, 153,153,0);
+      $purple = imagecolorallocate($im, 204,0,204);
+      $yellow = imagecolorallocate($im, 255,255,0);
 
       // Draw three dashed background lines.
       //
@@ -319,7 +357,7 @@
 
 	// Add weekly moving average.
 	if($i > 0) {
-  	  for($j = ($i-6); $j <= $i; $j++) {
+  	  for($j = ($i-3); $j <= ($i+3); $j++) {
             $avg += abs($this->history[$j]->usage);
 	  }
 	  $avg /= 7;
@@ -335,8 +373,29 @@
       $y = ($total / count($this->history)) * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
       imagedashedline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_WIDTH+IMAGE_BORDER_LEFT-IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), $blue);
 
-      $string = sprintf("Graph: %d days   Daily Average: %.1f Mb   Total: %.1f Gb", count($this->history), ($total / count($this->history)), $total/1024);
-      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), imagefontheight(2), $string, $blue);
+      // Add remaining daily average.
+      $y = ($this->remaining/$this->days_remaining) * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
+      imagedashedline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_WIDTH+IMAGE_BORDER_LEFT-IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), $orange);
+
+      // Add some info/legend.
+      $string = $string = sprintf("Current period: %s - %s", strftime("%a %d %b '%y", $this->p_start), strftime("%a %d %b '%y", $this->p_end) );
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 1), $string, $black);
+
+      $string = $string = sprintf("Graph Interval: %d days   Remaining: %d days", count($this->history), $this->days_remaining);
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
+
+      $string = sprintf("Daily Transfer: %.1f Mb   Total Transfer: %.1f Gb", ($total / count($this->history)), $total/1000);
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
+
+      $string = sprintf("Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
+      imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
+
+
+      // $string = sprintf("Graph: %d days   Daily Average: %.1f Mb   Total: %.1f Gb", count($this->history), ($total / count($this->history)), $total/1000);
+      // imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), imagefontheight(2), $string, $blue);
+
+      // $string = sprintf("Remaining: %d days   Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->days_remaining), ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
+      // imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
       // Draw 0-max border around the graph.
       //
