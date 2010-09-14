@@ -524,35 +524,13 @@
         $string = sprintf("Daily Transfer: %s   Total Transfer: %s", format_size($total / count($this->history)), format_size($total));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
 
-	if($this->remaining > 0) {
+        if($this->remaining > 0) {
           $string = sprintf("Daily Remaining: %s   Total Remaining: %s", format_size($this->remaining / $this->days_remaining), format_size($this->remaining) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
-	} else {
-	  $over = abs($this->remaining);
-	  if($over > (1000 * 1000 * 1000 * 1000 * 1000 * 1000 * 1000)) {
-	    $over /= (1000 * 1000 * 1000 * 1000 * 1000 * 1000);
-	    $unit = "Yottabytes";
-	  } else if($over > (1000 * 1000 * 1000 * 1000 * 1000 * 1000)) {
-	    $over /= (1000 * 1000 * 1000 * 1000 * 1000);
-	    $unit = "Zettabytes";
-	  } else if($over > (1000 * 1000 * 1000 * 1000 * 1000)) {
-	    $over /= (1000 * 1000 * 1000 * 1000);
-	    $unit = "Exabytes";
-	  } else if($over > (1000 * 1000 * 1000 * 1000)) {
-	    $over /= (1000 * 1000 * 1000);
-	    $unit = "Petabytes";
-	  } else if($over > (1000 * 1000 * 1000)) {
-	    $over /= (1000 * 1000);
-	    $unit = "Tb";
-	  } else if($over > (1000 * 1000)) {
-	    $over /= 1000;
-	    $unit = "Gb";
-	  } else {
-	    $unit = "Mb";
-	  }
+        } else {
           $string = sprintf("WARNING: You are %s over quota!", $this->format_size($over) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
-	}
+        }
       } else {
         $string = $string = sprintf("Graph Interval: %d days", count($this->history));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
