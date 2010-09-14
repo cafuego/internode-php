@@ -27,6 +27,8 @@
    *              Use the long php open tag. 
    *              The script can now also display text-only data or a direct raw
    *              data dump. Version checking is supported. (Use DISPLAY=4)
+   * 24/10/2004 - New version, added SSL_DISABLE_VERIFY to make curl not vomit
+   *		  on whatever internode have done to their ssl cert.
    */
 
   // Your username and password, change these.
@@ -55,7 +57,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "5");
+  define("INTERNODE_VERSION", "6");
 
   define("CAFUEGO_HOST", "www.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
@@ -87,9 +89,9 @@
 
     function internode() {
 
-      if(!file_exists(INTERNODE_CACHE))
+      // if(!file_exists(INTERNODE_CACHE))
         $this->refresh_cache();
-      else if( filemtime(INTERNODE_CACHE) < (time() - 3600))
+      // else if( filemtime(INTERNODE_CACHE) < (time() - 3600))
         $this->refresh_cache();
 
       $this->error = $this->read_cache();
@@ -136,21 +138,36 @@
       $url = "https://".INTERNODE_HOST.INTERNODE_URI;
 
       $o = curl_init();
-      curl_setopt($o, CURLOPT_RETURNTRANSFER, 1);
+
       curl_setopt($o, CURLOPT_URL, $url);
+      curl_setopt($o, CURL_VERBOSE, 1);
+      curl_setopt($o, CURLOPT_RETURNTRANSFER, 1);
       curl_setopt($o, CURLOPT_POST, 1);
       curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
-      
+    
+      curl_setopt ($o, CURLOPT_SSL_VERIFYPEER, false);
+      curl_setopt ($o, CURLOPT_SSL_VERIFYHOST, false);
+    
       $result = curl_exec($o); // run the whole process
-      curl_close($o); 
+    
+      if(!$result)
+        $result = "CURL Error ". curl_errno($o) .": ". curl_error($o);
+    
+      curl_close($o);
       return $result;
     }
-
+    
     function make_data($param) {
-      // Internode don't like urlencoded data...?
+      $ret = array(
+        'username' => INTERNODE_USERNAME."@internode.on.net",
+        'password' => INTERNODE_PASSWORD,
+        'iso' => 1
+      );
+    
       if($param == INTERNODE_HISTORY)
-        return "username=".INTERNODE_USERNAME."@internode.on.net&password=".INTERNODE_PASSWORD."&history=1&iso=1&";
-      return "username=".INTERNODE_USERNAME."@internode.on.net&password=".INTERNODE_PASSWORD."&iso=1&";
+        $ret['history'] = 1;
+    
+      return $ret;
     }
 
     function display($param) {
@@ -174,7 +191,7 @@
     }
 
     function version_check() {
-      echo readfile("http://".CAFUEGO_HOST.CAFUEGO_URI."?version=".INTERNODE_VERSION);
+      echo @readfile("http://".CAFUEGO_HOST.CAFUEGO_URI."?version=".INTERNODE_VERSION);
     }
 
     function display_raw() {
@@ -361,10 +378,9 @@
     }
   }
 
-  // Do the thing we do.
   $in = new internode();
 
-  // See if the stats server mentioned any errors. If so, show them instead.
+  // See if the stats server mentioned any errors
   if($in->error) {
     echo "Oops! Something unexpected happened, ".INTERNODE_HOST." said: &quot;<b style=\"color: #f00\">{$in->error}</b>&quot;\n";
   } else {
