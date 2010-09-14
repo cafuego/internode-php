@@ -81,7 +81,7 @@
 
   define("INTERNODE_VERSION", "13");
 
-  define("CAFUEGO_HOST", "www.cafuego.net");
+  define("CAFUEGO_HOST", "archive.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
 
   define("BYTE_A_KB", 1000);
