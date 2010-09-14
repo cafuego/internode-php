@@ -1,0 +1,14 @@
+PHP classes and routines for retrieving, caching, formatting and displaying
+Internode PADSL usage.
+
+Written by Peter Lieverdink <me@cafuego.net>
+Copyright 2004 Intellectual Property Holdings Pty. Ltd.
+
+License: GPL; See http://www.gnu.org/copyleft/gpl.html#SEC1 for a full version.
+
+Usage: http://yourwebhost.com.au/internode.php for the RSS feed
+   or: http://yourwebhost.com.au/internode.php?DISPLAY=1 for the PNG image.
+   or: http://yourwebhost.com.au/internode.php?DISPLAY=2 for text-only data.
+   or: http://yourwebhost.com.au/internode.php?DISPLAY=3 for a raw data dump.
+   or: http://yourwebhost.com.au/internode.php?DISPLAY=4 for a version check.
+
