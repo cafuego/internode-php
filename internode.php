@@ -5,9 +5,9 @@
    * Internode PADSL usage.
    *
    * Written by peter Lieverdink <me@cafuego.net>
-   * Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.
+   * Copyright 2004 Intellectual Property Holdings Pty. Ltd.
    *
-   * License: GPLv2; See http://www.gnu.org/copyleft/gpl.html#SEC1 for a full version.
+   * License: GPL; See http://www.gnu.org/copyleft/gpl.html#SEC1 for a full version.
    *
    * Usage: http://yourwebhost.com.au/internode.php for the RSS feed
    *    or: http://yourwebhost.com.au/internode.php?DISPLAY=1 for the PNG image.
@@ -37,8 +37,9 @@
    *              Added <link /> element to the rss display, to placate firefox live
    *              bookmark handling and entered data in <docs /> tag, so feed validates.
    * 14/02/2006 - Happy Valentines Day Donna!
-   *              Incrememted version number to 10, coz I am very special sometimes and
+   *              Incremented version number to 10, coz I am very special sometimes and
    *              forgot when I fixed the previous set of bugs ;-)
+   * 11/04/2007 - Graph drawing code rework. Now graph is scaled! (Needs more ram, though);
    */
 
   // Your username and password, change these.
@@ -46,8 +47,8 @@
   define("INTERNODE_PASSWORD", "replace_with_your_password");
 
   // Graph area size, tweak if you really must.
-  define("IMAGE_WIDTH", 550);
-  define("IMAGE_HEIGHT", 350);
+  define("IMAGE_WIDTH", 640);
+  define("IMAGE_HEIGHT", 480);
   
   // Number of recent days to graph data for. (0 = all)
   define("GRAPH_DAYS", 0);
@@ -58,7 +59,8 @@
   define("INTERNODE_HOST", "accounts.internode.on.net");
   define("INTERNODE_URI", "/cgi-bin/padsl-usage");
   define("INTERNODE_LOGIN", "/cgi-bin/login");
-  define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode.cache");
+  // define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode.cache");
+  define("INTERNODE_CACHE", "./tmp/internode.cache");
 
   define("INTERNODE_USAGE", 0);
   define("INTERNODE_HISTORY", 1);
@@ -70,7 +72,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "10");
+  define("INTERNODE_VERSION", "11");
 
   define("CAFUEGO_HOST", "www.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
@@ -105,6 +107,12 @@
     var $unlimited = false;
 
     function internode() {
+      // This is just an empty wrapper, quick hack to run the version check
+      // without a cache refresh.
+      return;
+    }
+
+    function init() {
 
       if(!file_exists(INTERNODE_CACHE))
         $this->refresh_cache();
@@ -112,7 +120,6 @@
         $this->refresh_cache();
 
       $this->error = $this->read_cache();
-
     }
 
     function refresh_cache() {
@@ -149,9 +156,7 @@
         $this->history = array();
 	$this->p_start = $this->period_start($arr[2]);
 	$this->p_end = $this->period_end($arr[2]);
-	$this->days_remaining = $this->get_remaining_days($arr[2]);
-	if(!$this->days_remaining)
-	  $this->days_remaining = 1;
+	$this->days_remaining = $this->get_remaining_days( $arr[2] );
 	while(!feof($fp)) {
 	  if( ($str = trim(fgetss($fp, 4096))) != "") {
 	    array_push($this->history, new history($str) );
@@ -163,13 +168,14 @@
           // Chop the history array.
 	  $this->history = array_slice($this->history, (count($this->history) - GRAPH_DAYS) );
 	}
+
       }
       return NULL;
     }
 
     function get_remaining_days($str) {
       list($y,$m,$d) = sscanf($str, "%04d%02d%02d");
-      return intval( (strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d)) - time()) / (60*60*24));
+      return intval( (strtotime( sprintf("%04d-%02d-%02d 00:00:00 +1000", $y, $m, $d)) - time()) / (60*60*24)) + 1;
     }
 
     // the d++ and m-- calls work in php4 but this roll-over functionality MAY be removed in php5.
@@ -196,22 +202,32 @@
       curl_setopt($o, CURLOPT_POST, 1);
       curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
     
-      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
+      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php v.%d; Copyright 2004 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
-      curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 2);
+      curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 0);
     
       $result = curl_exec($o); // run the whole process
     
       if(!$result)
         $result = "CURL Error ". curl_errno($o) .": ". curl_error($o);
-    
       curl_close($o);
+
+/*
+      if($param == INTERNODE_HISTORY)
+        $command = "curl -k -d username=".INTERNODE_USERNAME." -d password=".INTERNODE_PASSWORD." -d history=1 -d iso=1 {$url}";
+      else
+        $command = "curl -k -d username=".INTERNODE_USERNAME." -d password=".INTERNODE_PASSWORD." -d iso=1 {$url}";
+      $p = popen($command, "r");
+      $result = fread($p,32768);
+      pclose($p);
+*/
+
       return $result;
     }
     
     function make_data($param) {
       $ret = array(
-        'username' => INTERNODE_USERNAME."@internode.on.net",
+        'username' => INTERNODE_USERNAME,	// ."@internode.on.net",
         'password' => INTERNODE_PASSWORD,
         'iso' => 1
       );
@@ -225,18 +241,22 @@
     function display($param) {
       switch($param) {
         case INTERNODE_HISTORY:
+	  $this->init();
 	  $this->display_history();
 	  break;
         case INTERNODE_TEXT:
+	  $this->init();
 	  $this->display_text();
 	  break;
         case INTERNODE_RAW:
+	  $this->init();
 	  $this->display_raw();
 	  break;
         case INTERNODE_VERSION_CHECK:
 	  $this->version_check();
 	  break;
         default:
+	  $this->init();
 	  $this->display_rss();
 	  break;
       }
@@ -274,7 +294,7 @@
       echo "<link>https://".INTERNODE_HOST.INTERNODE_LOGIN."</link>\n";
       echo "<description>Internode ADSL Usage for ".INTERNODE_USERNAME."@internode.on.net</description>\n";
       echo "<language>en-au</language>\n";
-      echo "<copyright>Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
+      echo "<copyright>Copyright 2004 Intellectual Property Holdings Pty. Ltd.</copyright>\n";
       echo "<docs>http://www.cafuego.net/internode-usage.php</docs>\n";
       echo "<generator>Internode Usage v.". INTERNODE_VERSION ." - PHP ".phpversion()."</generator>\n";
       echo "<managingEditor>".INTERNODE_USERNAME."@internode.on.net</managingEditor>\n";
@@ -312,23 +332,42 @@
       }
     
       header("Content-type: image/png");
-      header("Content-disposition: inline; filename=\"Internode_Usage_Graph.png\"");
+      header("Content-disposition: inline; filename=\"Internode_Usage_Graph_".strftime("%Y%m%d").".png\"");
 
-      // Create image of specified size (and leave space for the borders)
+      // Make the graph WIDER if need be.
+      if( count($this->history) > IMAGE_WIDTH )
+        $g_width = count($this->history);
+      else
+        $g_width = IMAGE_WIDTH;
+
+      // Create image of specified size (and leave space for the borders) and a graph image.
       //
-      $im = imagecreate(IMAGE_WIDTH + (2*IMAGE_BORDER) + IMAGE_BORDER_LEFT, IMAGE_HEIGHT + (2*IMAGE_BORDER) + IMAGE_BORDER_BOTTOM);
+      $im = imagecreate( IMAGE_WIDTH + (2*IMAGE_BORDER) + IMAGE_BORDER_LEFT, IMAGE_HEIGHT + (2*IMAGE_BORDER) + IMAGE_BORDER_BOTTOM );
+      $graph = imagecreatetruecolor( $g_width, IMAGE_HEIGHT );
 
       // Allocate some colours.
       //
       $white = imagecolorallocate($im, 255,255,255);
       $black = imagecolorallocate($im, 0,0,0);
-      $red = imagecolorallocate($im, 224,0,0);
-      $green = imagecolorallocate($im, 0,204,0);
       $darkgreen = imagecolorallocate($im, 0, 102,0);
       $blue = imagecolorallocate($im, 0,0,204);
       $orange = imagecolorallocate($im, 153,153,0);
-      $purple = imagecolorallocate($im, 204,0,204);
-      $yellow = imagecolorallocate($im, 255,255,0);
+
+      // And graph colours.
+      //
+      $gwhite = imagecolorallocate($graph, 255,255,255);
+      $red = imagecolorallocate($graph, 224,0,0);
+      $green = imagecolorallocate($graph, 0,204,0);
+      $purple = imagecolorallocate($graph, 204,0,204);
+      $yellow = imagecolorallocate($graph, 255,255,0);
+      $gblue = imagecolorallocate($graph, 0,0,204);
+      $gorange = imagecolorallocate($graph, 153,153,0);
+
+      imagefilledrectangle( $graph, 0, 0, $g_width, IMAGE_HEIGHT, $gwhite );
+
+      // And last of all, our temporary resized graph.
+      //
+      $resized = imagecreatetruecolor( IMAGE_WIDTH, IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER) );
 
       // Draw three dashed background lines.
       //
@@ -339,7 +378,10 @@
 
       // Calculate bar width.
       //
-      $dx = intval(IMAGE_WIDTH / (count($this->history)+1) );
+      if(!GRAPH_DAYS || (GRAPH_DAYS > $this->history) )
+        $dx = 1;
+      else
+        $dx = ( IMAGE_WIDTH - IMAGE_BORDER * 2 ) / (count($this->history)+1);
 
       // Find scale maximum.
       //
@@ -366,27 +408,34 @@
       imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_mmb, IMAGE_BORDER+(3*$dy)-(imagefontheight(2)/2), sprintf("%.1f Mb", ($max/4)), $black);
       imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER-$len_min, IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-(imagefontheight(2)/2), "0.0 Mb", $black);
 
-      // Find out the interval for x axis labels.
+      // This needs to be twiddled if we have more history than space to draw in...
+      // First, save the entire history array (for the stats, which we draw later)
+
+      // Find out the interval for x axis labels - need to redo this.
       //
       $mod = intval(count($this->history)/8);
+
+      $dlx = ( IMAGE_WIDTH - IMAGE_BORDER * 2 ) / (count($this->history)+1);
+
+      for($i = 0; $i < count($this->history); $i++)
+	if($i % $mod == 0)
+          imagestringup($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dlx)-(imagefontheight(2)/2)+($dlx/2), IMAGE_HEIGHT-IMAGE_BORDER-IMAGE_BORDER_BOTTOM+$len_date, strftime("%d %b %y", $this->history[$i]->date), $black);
 
       // Draw usage bars and x axis.
       // When usage is NEGATIVE, draw bar UP anyway but in yellow.
       //
-      imagesetthickness($im, 2);
+      imagesetthickness($graph, 2);
 
       $prev_avg_w = 0;
       $prev_avg_m = 0;
       for($i = 0; $i < count($this->history); $i++) {
 	if($this->history[$i]->usage > 0) {
-	  $y = $this->history[$i]->usage * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-          imagefilledrectangle($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dx)+$dx, IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER, $green);
+	  $y = $this->history[$i]->usage * IMAGE_HEIGHT / $max;
+          imagefilledrectangle($graph, ($i*$dx), (IMAGE_HEIGHT-$y), ($i*$dx)+$dx, IMAGE_HEIGHT, $green);
 	} else { 
-	  $y = (abs($this->history[$i]->usage)) * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-          imagefilledrectangle($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dx)+$dx, IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER, $orange);
+	  $y = (abs($this->history[$i]->usage)) * (IMAGE_HEIGHT) / $max;
+          imagefilledrectangle($graph, ($i*$dx), (IMAGE_HEIGHT-$y), ($i*$dx)+$dx, IMAGE_HEIGHT, $yellow);
 	}
-	if($i % $mod == 0)
-          imagestringup($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dx)-(imagefontheight(2)/2)+($dx/2), IMAGE_HEIGHT-IMAGE_BORDER-IMAGE_BORDER_BOTTOM+$len_date, strftime("%d %b %y", $this->history[$i]->date), $black);
 
 	// Add weekly moving average.
 	if($i > 0) {
@@ -397,9 +446,9 @@
 	    }
 	  }
 	  $avg_w /= $k_w;
-	  $avg_w_y = $avg_w * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-	  $prev_avg_w_y = $prev_avg_w * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-	  imageline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i-0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$prev_avg_w_y),  IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i+0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$avg_w_y), $purple);
+	  $avg_w_y = $avg_w * IMAGE_HEIGHT / $max;
+	  $prev_avg_w_y = $prev_avg_w * IMAGE_HEIGHT / $max;
+	  imageline($graph, ($i-0.5)*$dx, (IMAGE_HEIGHT-$prev_avg_w_y), ($i+0.5)*$dx, (IMAGE_HEIGHT-$avg_w_y), $purple);
 	  $prev_avg_w = $avg_w;
 	  $avg_w = 0;
 	  $k_w = 0;
@@ -414,24 +463,34 @@
 	    }
 	  }
 	  $avg_m /= $k_m;
-	  $avg_m_y = $avg_m * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-	  $prev_avg_m_y = $prev_avg_m * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-	  imageline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i-0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$prev_avg_m_y),  IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i+0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$avg_m_y), $red);
+	  $avg_m_y = $avg_m * IMAGE_HEIGHT / $max;
+	  $prev_avg_m_y = $prev_avg_m * IMAGE_HEIGHT / $max;
+	  imageline($graph, ($i-0.5)*$dx, (IMAGE_HEIGHT-$prev_avg_m_y), ($i+0.5)*$dx, (IMAGE_HEIGHT-$avg_m_y), $red);
 	  $prev_avg_m = $avg_m;
 	  $avg_m = 0;
 	  $k_m = 0;
 	}
       }
 
-      imagesetthickness($im, 1);
+      imagesetthickness($graph, 1);
 
       // Add overall average.
-      $y = ($total / count($this->history)) * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-      imagedashedline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_WIDTH+IMAGE_BORDER_LEFT-IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), $blue);
+      $y = ($total / count($this->history)) * (IMAGE_HEIGHT) / $max;
+      imagedashedline($graph, 0, (IMAGE_HEIGHT-$y), $g_width, (IMAGE_HEIGHT-$y), $gblue);
 
       // Add remaining daily average.
-      $y = ($this->remaining/$this->days_remaining) * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
-      imagedashedline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), IMAGE_WIDTH+IMAGE_BORDER_LEFT-IMAGE_BORDER, (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$y), $orange);
+      $y = ($this->remaining/$this->days_remaining) * (IMAGE_HEIGHT) / $max;
+      imagedashedline($graph, 0, (IMAGE_HEIGHT-$y), $g_width, (IMAGE_HEIGHT-$y), $gorange);
+
+      // Graph done. Resize it to target.
+      //
+      imagecopyresized( $resized, $graph, 0, 0, 0, 0, IMAGE_WIDTH-(2*IMAGE_BORDER), IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER), $g_width, IMAGE_HEIGHT );
+      unset( $graph );
+
+      // Add it to output. Merging at 75% transparency seems to make it all look nice.
+      //
+      imagecopymerge( $im, $resized, IMAGE_BORDER_LEFT+IMAGE_BORDER, IMAGE_BORDER, 0, 0, IMAGE_WIDTH-(IMAGE_BORDER*2), IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER), 75 );
+      unset( $resized );
 
       // Add some info/legend.
       $string = $string = sprintf("Current period: %s - %s", strftime("%a %d %b %Y", $this->p_start), strftime("%a %d %b %Y", $this->p_end) );
@@ -448,7 +507,29 @@
           $string = sprintf("Daily Remaining: %.1f Mb   Total Remaining: %.1f Gb", ($this->remaining / $this->days_remaining), ($this->remaining/1000) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
 	} else {
-          $string = sprintf("WARNING: You are %.1f Gb over quota!", abs($this->remaining/1000) );
+	  $over = abs($this->remaining);
+	  if($over > (1000 * 1000 * 1000 * 1000 * 1000 * 1000 * 1000)) {
+	    $over /= (1000 * 1000 * 1000 * 1000 * 1000 * 1000);
+	    $unit = "Yottabytes";
+	  } else if($over > (1000 * 1000 * 1000 * 1000 * 1000 * 1000)) {
+	    $over /= (1000 * 1000 * 1000 * 1000 * 1000);
+	    $unit = "Zettabytes";
+	  } else if($over > (1000 * 1000 * 1000 * 1000 * 1000)) {
+	    $over /= (1000 * 1000 * 1000 * 1000);
+	    $unit = "Exabytes";
+	  } else if($over > (1000 * 1000 * 1000 * 1000)) {
+	    $over /= (1000 * 1000 * 1000);
+	    $unit = "Petabytes";
+	  } else if($over > (1000 * 1000 * 1000)) {
+	    $over /= (1000 * 1000);
+	    $unit = "Tb";
+	  } else if($over > (1000 * 1000)) {
+	    $over /= 1000;
+	    $unit = "Gb";
+	  } else {
+	    $unit = "Mb";
+	  }
+          $string = sprintf("WARNING: You are %.1f %s over quota!", $over, $unit );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
 	}
       } else {
@@ -477,7 +558,7 @@
       $footer = sprintf("PADSL usage graph %s - %s for %s@internode.on.net", strftime("%d/%m/%Y", $this->history[0]->date), strftime("%d/%m/%Y", $this->history[count($this->history)-1]->date), INTERNODE_USERNAME );
       imagestring($im, 3, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(3) * (strlen($footer)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM-IMAGE_BORDER, $footer, $black);
 
-      $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004-2006 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
+      $copyright = sprintf("Generated by internode.php v.%d - Copyright 2004 - 2007 Intellectual Property Holdings Pty. Ltd.", INTERNODE_VERSION );
       imagestring($im, 1, (IMAGE_BORDER_LEFT+IMAGE_WIDTH+(2*IMAGE_BORDER))/2 - imagefontwidth(1) * (strlen($copyright)/2), IMAGE_HEIGHT+IMAGE_BORDER_BOTTOM+IMAGE_BORDER, $copyright, $black);
 
       // Output image and deallocate memory.
