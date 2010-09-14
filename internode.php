@@ -20,6 +20,7 @@
    * 26/05/2004 - Updates.
    *              The script now checks for availability of gd and curl and also
    *              notifies the user if it can't write to the cache file.
+   * 07/06/2004 - The graph now also displays a 7-day moving average in blue.
    */
 
   // Your username and password, change these.
@@ -45,7 +46,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", 3);
+  define("INTERNODE_VERSION", "4");
 
   class history {
     var $date = null;
@@ -240,6 +241,7 @@
       // Draw usage bars and x axis.
       // When usage is NEGATIVE, draw bar UP anyway but in blue.
       //
+      $prev_avg = 0;
       for($i = 0; $i < count($this->history); $i++) {
 	if($this->history[$i]->usage > 0) {
 	  $y = $this->history[$i]->usage * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / $max;
@@ -250,6 +252,19 @@
 	}
 	if($i % $mod == 0)
           imagestringup($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dx)-(imagefontheight(2)/2)+($dx/2), IMAGE_HEIGHT-IMAGE_BORDER-IMAGE_BORDER_BOTTOM+$len_date, strftime("%d %b %y", $this->history[$i]->date), $black);
+
+	// Add 7 day moving average.
+	//
+	if($i > 0) {
+  	  for($j = ($i-3); $j <= ($i+3); $j++) {
+            $avg += abs($this->history[$j]->usage);
+	  }
+	  $avg_y = $avg * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / (7 * $max);
+	  $prev_avg_y = $prev_avg * (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-(2*IMAGE_BORDER)) / (7 * $max);
+	  imageline($im, IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i-0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$prev_avg_y),  IMAGE_BORDER_LEFT+IMAGE_BORDER+(($i+0.5)*$dx), (IMAGE_HEIGHT-IMAGE_BORDER_BOTTOM-IMAGE_BORDER-$avg_y), $blue);
+	  $prev_avg = $avg;
+	  $avg = 0;
+	}
       }
 
       // Draw 0-max border around the graph.
