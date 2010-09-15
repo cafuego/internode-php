@@ -136,7 +136,7 @@
 
     function refresh_cache() {
       // Do we need to specify a number of days to get hysterical data for?
-      $count = (GRAPH_DAYS != 365) ? '?count=' . GRAPH_DAYS : '';
+      $count = (GRAPH_DAYS != 0) ? '?count=' . GRAPH_DAYS : '';
 
       // So many arrays, this is starting to look like Drupal.
       $url = "https://".INTERNODE_HOST . INTERNODE_URI .'/'. $this->service_id;
@@ -180,11 +180,6 @@
       $this->days_remaining = $this->get_remaining_days($cache['service']['rollover']);
       foreach ($cache['history']['usage'] as $usage) {
         array_push($this->history, new history($usage));
-      }
-
-      if(GRAPH_DAYS) {
-        // Chop the history array.
-        $this->history = array_slice($this->history, (count($this->history) - GRAPH_DAYS) );
       }
 
       $this->type = $cache['service']['@attributes']['type'];
