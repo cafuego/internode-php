@@ -67,8 +67,9 @@
   define("INTERNODE_HOST", "customer-webtools-api.internode.on.net");
   define("INTERNODE_URI", "/api/v1.5");
   define("INTERNODE_LOGIN", "/cgi-bin/login");
-  // define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode-".INTERNODE_USERNAME.".cache");
-  define("INTERNODE_CACHE", "./tmp/internode-cache.".INTERNODE_USERNAME);
+  define("INTERNODE_CACHE", ini_get("upload_tmp_dir")."/internode-".INTERNODE_USERNAME.".cache");
+  // define("INTERNODE_CACHE", "/tmp/internode-".INTERNODE_USERNAME.".cache");
+  // define("INTERNODE_CACHE", "./tmp/internode-".INTERNODE_USERNAME.".cache");
 
   define("INTERNODE_USAGE", 0);
   define("INTERNODE_HISTORY", 1);
