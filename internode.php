@@ -1,6 +1,6 @@
 <?php
   /* internode.php
-   * 
+   *
    * PHP classes and routines for retrieving, caching, formatting and displaying
    * Internode PADSL usage.
    *
@@ -76,7 +76,7 @@
   define("INTERNODE_RAW", 3);
   define("INTERNODE_VERSION_CHECK", 4);
   define("INTERNODE_CISCO79XX", 5);
- 
+
   define("IMAGE_BORDER", 10);
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
@@ -222,7 +222,6 @@
       curl_setopt($o, CURLOPT_GET, 1);
       curl_setopt($o, CURLOPT_USERPWD, INTERNODE_USERNAME . ':' . INTERNODE_PASSWORD);
       curl_setopt($o, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
-      // curl_setopt($o, CURLOPT_POSTFIELDS, $this->make_data($param) );
 
       curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php/v.%d (Copyright 2004-2011 Intellectual Property Holdings Pty. Ltd.)", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
@@ -260,22 +259,22 @@
       switch($param) {
         case INTERNODE_HISTORY:
           $this->display_history();
-	  break;
+          break;
         case INTERNODE_TEXT:
-	  $this->display_text();
-	  break;
+          $this->display_text();
+          break;
         case INTERNODE_RAW:
-	  $this->display_raw();
-	  break;
+          $this->display_raw();
+          break;
         case INTERNODE_VERSION_CHECK:
-	  $this->version_check();
-	  break;
+          $this->version_check();
+          break;
         case INTERNODE_CISCO79XX:
           $this->display_cisco79xx();
           break;
         default:
-	  $this->display_rss();
-	  break;
+          $this->display_rss();
+          break;
       }
     }
 
@@ -365,7 +364,7 @@
       if(!function_exists("imagepng")) {
         die("Sorry, this PHP installation cannot create dynamic PNG images");
       }
-    
+
       header("Content-type: image/png");
       header("Content-disposition: inline; filename=\"Internode_Usage_Graph_".strftime("%Y%m%d").".png\"");
 
@@ -454,7 +453,7 @@
       $dlx = ( IMAGE_WIDTH - IMAGE_BORDER * 2 ) / (count($this->history)+1);
 
       for($i = 0; $i < count($this->history); $i++)
-	if($i % $mod == 0)
+        if($i % $mod == 0)
           imagestringup($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+($i*$dlx)-(imagefontheight(2)/2)+($dlx/2), IMAGE_HEIGHT-IMAGE_BORDER-IMAGE_BORDER_BOTTOM+$len_date, strftime("%d %b %y", $this->history[$i]->date), $black);
 
       // Draw usage bars and x axis.
@@ -465,47 +464,47 @@
       $prev_avg_w = 0;
       $prev_avg_m = 0;
       for($i = 0; $i < count($this->history); $i++) {
-	if($this->history[$i]->usage > 0) {
-	  $y = $this->history[$i]->usage * IMAGE_HEIGHT / $max;
+        if($this->history[$i]->usage > 0) {
+          $y = $this->history[$i]->usage * IMAGE_HEIGHT / $max;
           imagefilledrectangle($graph, ($i*$dx), (IMAGE_HEIGHT-$y), ($i*$dx)+$dx, IMAGE_HEIGHT, $green);
-	} else { 
-	  $y = (abs($this->history[$i]->usage)) * (IMAGE_HEIGHT) / $max;
+        } else { 
+          $y = (abs($this->history[$i]->usage)) * (IMAGE_HEIGHT) / $max;
           imagefilledrectangle($graph, ($i*$dx), (IMAGE_HEIGHT-$y), ($i*$dx)+$dx, IMAGE_HEIGHT, $yellow);
-	}
+        }
 
-	// Add weekly moving average.
-	if($i > 0) {
-  	  for($j = ($i-3); $j <= ($i+3); $j++) {
-	    if( $this->history[$j] ) {
+        // Add weekly moving average.
+        if($i > 0) {
+          for($j = ($i-3); $j <= ($i+3); $j++) {
+            if( $this->history[$j] ) {
               $avg_w += abs($this->history[$j]->usage);
-	      $k_w++;
-	    }
-	  }
-	  $avg_w /= $k_w;
-	  $avg_w_y = $avg_w * IMAGE_HEIGHT / $max;
-	  $prev_avg_w_y = $prev_avg_w * IMAGE_HEIGHT / $max;
-	  imageline($graph, ($i-0.5)*$dx, (IMAGE_HEIGHT-$prev_avg_w_y), ($i+0.5)*$dx, (IMAGE_HEIGHT-$avg_w_y), $purple);
-	  $prev_avg_w = $avg_w;
-	  $avg_w = 0;
-	  $k_w = 0;
-	}
+              $k_w++;
+            }
+          }
+          $avg_w /= $k_w;
+          $avg_w_y = $avg_w * IMAGE_HEIGHT / $max;
+          $prev_avg_w_y = $prev_avg_w * IMAGE_HEIGHT / $max;
+          imageline($graph, ($i-0.5)*$dx, (IMAGE_HEIGHT-$prev_avg_w_y), ($i+0.5)*$dx, (IMAGE_HEIGHT-$avg_w_y), $purple);
+          $prev_avg_w = $avg_w;
+          $avg_w = 0;
+          $k_w = 0;
+        }
 
-	// Add quarterly moving average.
-	if($i > 0) {
-  	  for($j = ($i-44); $j <= ($i+44); $j++) {
-	    if( $this->history[$j] ) {
+        // Add quarterly moving average.
+        if($i > 0) {
+          for($j = ($i-44); $j <= ($i+44); $j++) {
+            if( $this->history[$j] ) {
               $avg_m += abs($this->history[$j]->usage);
-	      $k_m++;
-	    }
-	  }
-	  $avg_m /= $k_m;
-	  $avg_m_y = $avg_m * IMAGE_HEIGHT / $max;
-	  $prev_avg_m_y = $prev_avg_m * IMAGE_HEIGHT / $max;
-	  imageline($graph, ($i-0.5)*$dx, (IMAGE_HEIGHT-$prev_avg_m_y), ($i+0.5)*$dx, (IMAGE_HEIGHT-$avg_m_y), $red);
-	  $prev_avg_m = $avg_m;
-	  $avg_m = 0;
-	  $k_m = 0;
-	}
+              $k_m++;
+            }
+          }
+          $avg_m /= $k_m;
+          $avg_m_y = $avg_m * IMAGE_HEIGHT / $max;
+          $prev_avg_m_y = $prev_avg_m * IMAGE_HEIGHT / $max;
+          imageline($graph, ($i-0.5)*$dx, (IMAGE_HEIGHT-$prev_avg_m_y), ($i+0.5)*$dx, (IMAGE_HEIGHT-$avg_m_y), $red);
+          $prev_avg_m = $avg_m;
+          $avg_m = 0;
+          $k_m = 0;
+        }
       }
 
       imagesetthickness($graph, 1);
@@ -585,12 +584,12 @@
   // Lifted from php.net - because SimpleXML OBjects are just too awful to deal with.
   function xml2arr($arrObjData, $arrSkipIndices = array()) {
     $arrData = array();
-    
+
     // if input is object, convert into array
     if (is_object($arrObjData)) {
         $arrObjData = get_object_vars($arrObjData);
     }
-    
+
     if (is_array($arrObjData)) {
         foreach ($arrObjData as $index => $value) {
             if (is_object($value) || is_array($value)) {
