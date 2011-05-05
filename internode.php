@@ -44,10 +44,12 @@
    *              Added support for Cisco 79XX IP phone output. The patch for this was provided
    *              by `michael' on Whirlpool. http://forums.whirlpool.net.au/forum-user.cfm?id=53603
    * 15/09/2010 - Rewrite to use the REST API. Note that I dislike SimpleXML. A lot.
-   *              simplexml is a new requirement. THis also means the script will likely
+   *              simplexml is a new requirement. This also means the script will likely
    *              bomb on php4, so make sure you use php5. 5.2 seems to be fine.
    * 12/01/2011 - Check the HTTP status code from the API server and tell the user if we
    *              did not get a 200 -OK.
+   * 06/05/2011 - Add days remaining in period display to TXT, RSS and Cisco phone displays. The
+   *              image output already included this information.
    */
 
   // Your username and password, change these.
@@ -82,7 +84,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "14");
+  define("INTERNODE_VERSION", "15");
 
   define("CAFUEGO_HOST", "archive.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
@@ -298,6 +300,7 @@
         printf("quota|%s\n", format_size($this->quota) );
         printf("remaining|%s\n", format_size($this->remaining) );
         printf("percentage|%.2f %%\n", $this->percentage );
+        printf("days remaining in period|%d\n", $this->days_remaining );
         printf("remaining per day|%s\n", format_size($this->remaining / $this->days_remaining) );
       }
     }
@@ -336,6 +339,10 @@
         printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
         echo "<item>\n";
+        printf("  <title>Days remaining in period: %d</title>\n", $this->days_remaining );
+        printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
+        echo "</item>\n";
+        echo "<item>\n";
         printf("  <title>Remaining per day: %s</title>\n", format_size($this->remaining / $this->days_remaining) );
         printf("  <link>https://accounts.internode.on.net/cgi-bin/login</link>\n");
         echo "</item>\n";
@@ -355,6 +362,7 @@
         printf("Quota: %s\n", format_size($this->quota) );
         printf("Remaining: %s (%.2f %%)\n", format_size($this->remaining), $this->percentage );
         printf("Remaining per Day: %s\n", format_size($this->remaining / $this->days_remaining) );
+        printf("Days remaining in period: %d\n", $this->days_remaining );
       }
       echo " </Text>\n";
       echo " <Prompt>".INTERNODE_USERNAME."</Prompt>\n";
