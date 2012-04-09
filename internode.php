@@ -52,6 +52,9 @@
    *              image output already included this information.
    */
 
+  // Newer PHP versions output a fee too many errors
+  ini_set('error_reporting', E_ALL ^ E_NOTICE);
+
   // Your username and password, change these.
   define("INTERNODE_USERNAME", "replace_with_your_username");
   define("INTERNODE_PASSWORD", "replace_with_your_password");
@@ -482,10 +485,12 @@
         }
 
         // Add weekly moving average.
-        if($i > 0) {
+        if (isset($i) && ($i > 0)) {
           for($j = ($i-3); $j <= ($i+3); $j++) {
-            if( $this->history[$j] ) {
-              $avg_w += abs($this->history[$j]->usage);
+            if( isset($this->history[$j]) && $this->history[$j] ) {
+	      if (isset($this->history[$j]->usage)) {
+                $avg_w += abs($this->history[$j]->usage);
+	      }
               $k_w++;
             }
           }
@@ -499,10 +504,12 @@
         }
 
         // Add quarterly moving average.
-        if($i > 0) {
+        if (isset($i) && ($i > 0)) {
           for($j = ($i-44); $j <= ($i+44); $j++) {
-            if( $this->history[$j] ) {
-              $avg_m += abs($this->history[$j]->usage);
+            if( isset($this->history[$j]) && $this->history[$j] ) {
+	      if (isset($this->history[$j]->usage)) {
+                $avg_m += abs($this->history[$j]->usage);
+	      }
               $k_m++;
             }
           }
@@ -544,21 +551,21 @@
         $string = $string = sprintf("Graph Interval: %d days   Remaining: %d days", count($this->history), $this->days_remaining);
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
-        $string = sprintf("Daily Transfer: %s   Total Transfer: %s", format_size($total / count($this->history)), format_size($total));
+        $string = sprintf("Daily Transfer: %s   Total Transfer: %s", format_size($this->used / count($this->history)), format_size($this->used));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
 
         if($this->remaining > 0) {
           $string = sprintf("Daily Remaining: %s   Total Remaining: %s", format_size($this->remaining / $this->days_remaining), format_size($this->remaining) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
         } else {
-          $string = sprintf("WARNING: You are %s over quota!", $this->format_size($over) );
+          $string = sprintf("WARNING: You are %s over quota!", format_size($over) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
         }
       } else {
         $string = $string = sprintf("Graph Interval: %d days", count($this->history));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 2), $string, $blue);
 
-        $string = sprintf("Daily Transfer: %s   Total Transfer: %s", $this->format_size($total / count($this->history)), $this->format_size($total/1000));
+        $string = sprintf("Daily Transfer: %s   Total Transfer: %s", format_size($total / count($this->history)), $this->format_size($total/1000));
         imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 3), $string, $darkgreen);
       }
 
