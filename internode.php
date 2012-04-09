@@ -52,6 +52,9 @@
    *              image output already included this information.
    */
 
+  // Newer PHP versions output a fee too many errors
+  ini_set('error_reporting', E_ALL ^ E_NOTICE);
+
   // Your username and password, change these.
   define("INTERNODE_USERNAME", "replace_with_your_username");
   define("INTERNODE_PASSWORD", "replace_with_your_password");
