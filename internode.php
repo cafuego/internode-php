@@ -50,9 +50,11 @@
    *              did not get a 200 -OK.
    * 06/05/2011 - Add days remaining in period display to TXT, RSS and Cisco phone displays. The
    *              image output already included this information.
+   * 10/04/2012 - Merge fixes from Simon Lindsay (simgularo) in the over-quota code path and to
+   *              avoid some notices about unset variables. Allow turning off of errors.
    */
 
-  // Newer PHP versions output a fee too many errors
+  // Newer PHP versions output a few too many errors
   ini_set('error_reporting', E_ALL ^ E_NOTICE);
 
   // Your username and password, change these.
@@ -87,7 +89,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "15");
+  define("INTERNODE_VERSION", "16");
 
   define("CAFUEGO_HOST", "archive.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
