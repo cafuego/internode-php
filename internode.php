@@ -225,15 +225,15 @@
       $o = curl_init();
 
       curl_setopt($o, CURLOPT_URL, $url);
-      curl_setopt($o, CURL_VERBOSE, 1);
-      curl_setopt($o, CURLOPT_RETURNTRANSFER, 1);
-      curl_setopt($o, CURLOPT_GET, 1);
+      curl_setopt($o, CURLOPT_VERBOSE, TRUE);
+      curl_setopt($o, CURLOPT_RETURNTRANSFER, TRUE);
+      curl_setopt($o, CURLOPT_GET, TRUE);
       curl_setopt($o, CURLOPT_USERPWD, INTERNODE_USERNAME . ':' . INTERNODE_PASSWORD);
       curl_setopt($o, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
 
       curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php/v.%d (Copyright 2004 - 2012 Intellectual Property Holdings Pty. Ltd.)", INTERNODE_VERSION ) );
-      curl_setopt($o, CURLOPT_SSL_VERIFYPEER, 0);
-      curl_setopt($o, CURLOPT_SSL_VERIFYHOST, 0);
+      curl_setopt($o, CURLOPT_SSL_VERIFYPEER, FALSE);
+      curl_setopt($o, CURLOPT_SSL_VERIFYHOST, FALSE);
 
       $result = curl_exec($o); // run the whole process
 
