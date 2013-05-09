@@ -52,6 +52,8 @@
    *              image output already included this information.
    * 10/04/2012 - Merge fixes from Simon Lindsay (simgularo) in the over-quota code path and to
    *              avoid some notices about unset variables. Allow turning off of errors.
+   * 09/05/2013 - Merge a fix from Peter Fern (pdf) to display over-quota usage and remove the
+   *              reference to CURLOPT_GET which no longer seems to exist.
    */
 
   // Newer PHP versions output a few too many errors
@@ -227,11 +229,10 @@
       curl_setopt($o, CURLOPT_URL, $url);
       curl_setopt($o, CURLOPT_VERBOSE, TRUE);
       curl_setopt($o, CURLOPT_RETURNTRANSFER, TRUE);
-      curl_setopt($o, CURLOPT_GET, TRUE);
       curl_setopt($o, CURLOPT_USERPWD, INTERNODE_USERNAME . ':' . INTERNODE_PASSWORD);
       curl_setopt($o, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
 
-      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php/v.%d (Copyright 2004 - 2012 Intellectual Property Holdings Pty. Ltd.)", INTERNODE_VERSION ) );
+      curl_setopt($o, CURLOPT_USERAGENT, sprintf("internode.php/v.%d (Copyright 2004 - 2013 Intellectual Property Holdings Pty. Ltd.)", INTERNODE_VERSION ) );
       curl_setopt($o, CURLOPT_SSL_VERIFYPEER, FALSE);
       curl_setopt($o, CURLOPT_SSL_VERIFYHOST, FALSE);
 
