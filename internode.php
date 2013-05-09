@@ -91,7 +91,7 @@
   define("IMAGE_BORDER_LEFT", 60);
   define("IMAGE_BORDER_BOTTOM", 40);
 
-  define("INTERNODE_VERSION", "16");
+  define("INTERNODE_VERSION", "17");
 
   define("CAFUEGO_HOST", "archive.cafuego.net");
   define("CAFUEGO_URI", "/internode-usage.php");
