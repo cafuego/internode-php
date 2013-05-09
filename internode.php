@@ -560,7 +560,7 @@
           $string = sprintf("Daily Remaining: %s   Total Remaining: %s", format_size($this->remaining / $this->days_remaining), format_size($this->remaining) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $orange);
         } else {
-          $string = sprintf("WARNING: You are %s over quota!", format_size($over) );
+          $string = sprintf("WARNING: You are %s over quota!", format_size($this->remaining * -1) );
           imagestring($im, 2, IMAGE_BORDER_LEFT+IMAGE_BORDER+imagefontwidth(2), (imagefontheight(2) * 4), $string, $red);
         }
       } else {
