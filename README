@@ -12,3 +12,5 @@ Usage: http://yourwebhost.com.au/internode.php for the RSS feed
    or: http://yourwebhost.com.au/internode.php?DISPLAY=3 for a raw data dump.
    or: http://yourwebhost.com.au/internode.php?DISPLAY=4 for a version check.
 
+
+Join the chat at https://gitter.im/cafuego/internode-php
